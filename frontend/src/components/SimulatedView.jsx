@@ -1,7 +1,10 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Camera } from 'lucide-react'
 
 function SimulatedView() {
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState(false)
+
   return (
     <div style={{
       backgroundColor: '#0f0f1a', borderRadius: 8,
@@ -17,34 +20,29 @@ function SimulatedView() {
         </span>
       </div>
 
-      {/* ── STREAM INPUT ────────────────────────────────────────────────────
-          Replace the src below with your Flask stream URL.
-          Your Python backend must be running and serving frames at this URL.
-          Default assumes backend runs on port 5000.
-      ─────────────────────────────────────────────────────────────────── */}
-      <img
-        src="http://127.0.0.1:5000/video_feed"
-        alt="Drone feed"
-        style={{ width: '100%', display: 'block' }}
-        onError={(e) => { e.target.style.display = 'none' }}
-      />
+      {/* Video stream */}
+      {!error && (
+        <img
+          src="http://127.0.0.1:5000/video_feed"
+          alt="Drone feed"
+          style={{ width: '100%', display: loaded ? 'block' : 'none' }}
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+        />
+      )}
 
-      {/* ── PLACEHOLDER ─────────────────────────────────────────────────────
-          This shows when the stream is offline / backend not running.
-          Remove or hide this once your backend is live.
-      ─────────────────────────────────────────────────────────────────── */}
-      <div style={{
-        width: '100%', height: 300, backgroundColor: '#000',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8
-      }}>
-        <Camera size={32} color='#333' />
-        <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#333', textTransform: 'uppercase' }}>
-          Awaiting drone feed...
-        </span>
-        <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#222' }}>
-          Start Python backend to stream
-        </span>
-      </div>
+      {/* Placeholder — only shows if stream hasn't loaded or errored */}
+      {(!loaded || error) && (
+        <div style={{
+          width: '100%', height: 300, backgroundColor: '#000',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8
+        }}>
+          <Camera size={32} color='#333' />
+          <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#333', textTransform: 'uppercase' }}>
+            {error ? 'Stream offline' : 'Connecting to drone feed...'}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

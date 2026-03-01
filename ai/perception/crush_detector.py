@@ -225,7 +225,7 @@ class CrushRiskDetector:
                 
                 # Only consider cells with meaningful risk (higher threshold)
                 # 0.65 = requires BOTH high density AND high bidirectional flow
-                if risk_score > 0.8:  # Raised to prevent crosswalk false positives
+                if risk_score > 0.7:  # Raised to prevent crosswalk false positives
                     risk_cells.append({
                         'row': row,
                         'col': col,

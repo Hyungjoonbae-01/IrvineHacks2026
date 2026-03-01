@@ -39,6 +39,8 @@ import argparse
 import threading  # ← ADDED
 from datetime import datetime
 from flask import Flask, Response  # ← ADDED
+from flask_cors import CORS
+
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -51,6 +53,7 @@ from ai.perception.crush_detector import CrushRiskDetector, draw_crush_risk_circ
 # This shared variable holds the latest processed frame so Flask can serve it.
 # The lock prevents the video loop and Flask from reading/writing at the same time.
 app = Flask(__name__)
+CORS(app)
 latest_frame = None        # holds the most recent output_frame as JPEG bytes
 frame_lock = threading.Lock()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,9 +191,10 @@ def main():
             if not paused:
                 ret, frame = cap.read()
                 if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop back to start
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
                     #print("\n✅ Video finished")
-                    break
+                    
                 
                 frame_count += 1
                 
@@ -243,6 +247,14 @@ def main():
                 # Draw circles on frame
                 output_frame = draw_crush_risk_circles(frame, detection_result)
                 
+                # ── SHARE FRAME WITH FLASK ───────────────────────────────────────────
+                global latest_frame
+                ret_enc, buffer = cv2.imencode('.jpg', output_frame)
+                if ret_enc:
+                    with frame_lock:
+                        latest_frame = buffer.tobytes()
+                # ─────────────────────────────────────────────────────────────────────
+
                 # Resize for display
                 output_frame = cv2.resize(output_frame, (display_width, display_height))
                 
