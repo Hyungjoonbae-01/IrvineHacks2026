@@ -1,0 +1,27 @@
+# ClearPath - Python Dependencies
+
+# Web Framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# Computer Vision & AI
+opencv-python==4.9.0.80
+numpy==1.26.3
+scipy==1.11.4
+ultralytics==8.0.0  # For YOLOv8 object detection
+
+# Optional: Advanced AI/ML
+# torch==2.1.2
+# torchvision==0.16.2
+# tensorflow==2.15.0
+
+# Serial Communication (for hardware)
+pyserial==3.5
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1

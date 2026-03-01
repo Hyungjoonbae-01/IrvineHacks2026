@@ -1,0 +1,91 @@
+/* ─── ROOT VARIABLES ───────────────────────────────────── */
+
+:root {
+  --bg-main: #080810;
+  --bg-card: #0f0f1a;
+  --bg-subtle: #0a0a14;
+  --border-color: #2a2a3a;
+  --text-primary: #f0f0f0;
+  --text-muted: #888;
+  --green: #6ee7b7;
+  --yellow: #fbbf24;
+  --red: #f87171;
+}
+
+/* ─── GLOBAL ───────────────────────────────────────────── */
+
+.dashboard {
+  min-height: 100vh;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.section-padding {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.card-header {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.grid-2-1 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+  min-height: 500px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+/* Scroll styling */
+.scrollable {
+  overflow-y: auto;
+}
+
+/* Buttons */
+.zone-button {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

@@ -1,0 +1,163 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+.venv
+venv/
+ENV/
+env/
+
+# JavaScript / Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+package-lock.json
+yarn.lock
+.next/
+out/
+build/
+dist/
+.cache/
+.parcel-cache/
+.eslintcache
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# AI / ML
+*.h5
+*.hdf5
+*.pb
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.tflite
+*.caffemodel
+*.model
+*.weights
+*.json.gz
+ai/models/*
+!ai/models/.gitkeep
+data/output/*
+!data/output/.gitkeep
+
+# Video and Media Files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+data/videos/*
+!data/videos/.gitkeep
+
+# Audio Files
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.m4a
+hardware/audio/sounds/*
+!hardware/audio/sounds/.gitkeep
+
+# Large Dataset Files
+*.csv
+*.tsv
+*.parquet
+*.h5
+*.hdf5
+*.tfrecord
+*.bin
+
+# Logs and Databases
+*.log
+*.sql
+*.sqlite
+*.db
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# OS
+Thumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Build artifacts
+*.pyc
+*.pyo
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Documentation builds
+docs/_build/
+docs/.doctrees/
+site/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Hardware config (may contain sensitive data)
+hardware/config/*.json
+!hardware/config/example.json
