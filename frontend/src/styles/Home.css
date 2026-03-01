@@ -1,15 +1,15 @@
 /* ─── ROOT VARIABLES ───────────────────────────────────── */
 
 :root {
-  --bg-main: #080810;
-  --bg-card: #0f0f1a;
-  --bg-subtle: #0a0a14;
-  --border-color: #2a2a3a;
-  --text-primary: #f0f0f0;
-  --text-muted: #888;
-  --green: #6ee7b7;
-  --yellow: #fbbf24;
-  --red: #f87171;
+  --bg-main: #0a0a14;
+  --bg-card: #0f172a;
+  --bg-subtle: #1e293b;
+  --border-color: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --green: #10b981;
+  --yellow: #f59e0b;
+  --red: #ef4444;
 }
 
 /* ─── GLOBAL ───────────────────────────────────────────── */
@@ -22,10 +22,10 @@
 }
 
 .section-padding {
-  padding: 16px;
+  padding: 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
 }
 
 .card {

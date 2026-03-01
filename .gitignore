@@ -79,28 +79,6 @@ dist/
 *.json.gz
 ai/models/*
 !ai/models/.gitkeep
-data/output/*
-!data/output/.gitkeep
-
-# Video and Media Files
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.wmv
-*.flv
-*.webm
-data/videos/*
-!data/videos/.gitkeep
-
-# Audio Files
-*.mp3
-*.wav
-*.ogg
-*.flac
-*.m4a
-hardware/audio/sounds/*
-!hardware/audio/sounds/.gitkeep
 
 # Large Dataset Files
 *.csv
@@ -110,6 +88,14 @@ hardware/audio/sounds/*
 *.hdf5
 *.tfrecord
 *.bin
+
+# Video Files (too large for GitHub)
+*.mp4
+*.avi
+*.mov
+*.mkv
+data/videos/*
+!data/videos/.gitkeep
 
 # Logs and Databases
 *.log

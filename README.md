@@ -1,0 +1,1 @@
+# ClearPath - Crowd Crush Detection & Intervention System

@@ -1,11 +1,11 @@
 // src/components/SystemStats.jsx
 import React, { useState, useEffect } from 'react'
-import { Users, Brain, Gauge, ShieldAlert } from 'lucide-react' // or your icon library
+import { Users, Blend, Gauge, ShieldAlert } from 'lucide-react' // or your icon library
 
 function SystemStats() {
   const [stats, setStats] = useState([
-    { label: 'Total Detected', value: '547', subtext: 'persons across all zones', icon: Users },
-    { label: 'Overload Score', value: '64', subtext: 'cognitive load index', icon: Brain },
+    { label: 'Total Detected', value: '1948', subtext: 'persons across all zones', icon: Users },
+    { label: 'Overload Score', value: '64', subtext: 'area overload index', icon: Blend },
     { label: 'System Latency', value: '12ms', subtext: 'on-device inference', icon: Gauge },
     { label: 'Active Interventions', value: '2', subtext: 'zones in intervention', icon: ShieldAlert },
   ])
@@ -52,7 +52,7 @@ function SystemStats() {
               flexShrink: 0,
             }}
           >
-            <Icon size={18} color="#6ee7b7" />
+            <Icon size={24} color="#6ee7b7" />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             <span
@@ -67,7 +67,7 @@ function SystemStats() {
             </span>
             <span
               style={{
-                fontSize: 18,
+                fontSize: 38,
                 fontFamily: 'monospace',
                 fontWeight: 600,
                 color: '#f0f0f0',
@@ -78,7 +78,7 @@ function SystemStats() {
             </span>
             <span
               style={{
-                fontSize: 10,
+                fontSize: 12,
                 color: '#888',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

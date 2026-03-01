@@ -21,7 +21,7 @@ function DashboardHeader() {
   return (
     <header style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      borderBottom: '1px solid #2a2a3a', padding: '12px 24px',
+      borderBottom: '1px solid #2a2a3a', padding: '16px 24px',
       backgroundColor: '#0f0f1a'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -33,7 +33,7 @@ function DashboardHeader() {
               borderRadius: '50%', backgroundColor: '#6ee7b7', display: 'block'
             }} />
           </div>
-          <span style={{ fontSize: 18, fontWeight: 600, color: '#f0f0f0', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 28, fontWeight: 600, color: '#f0f0f0', fontFamily: 'monospace' }}>
             ClearPath
           </span>
         </div>

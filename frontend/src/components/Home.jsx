@@ -1,42 +1,386 @@
-
-import SystemStats from './SystemStats'
-import MetricsCharts from './MetricsCharts' 
-import VideoFeed from './VideoFeed'
-import VenueZones from './VenueZones'
-import EventLog from './EventLog'
-import DashboardHeader from './DashboardHeader'
+import React, { useEffect, useState, useRef } from 'react'
+import { AlertTriangle, Activity, Gauge, Users, ShieldAlert } from 'lucide-react'
 import SimulatedView from './SimulatedView'
-
+import DroneCam from './DroneCam'
+import InteractiveVideoFeed from './InteractiveVideoFeed'
 import '../styles/Home.css'
 
-import React, { useEffect, useState, useCallback, useRef } from 'react'
-import {
-  AlertTriangle, Info, ShieldCheck, ArrowRight,
-  ChevronDown, ChevronUp, Users, Thermometer, Volume2, Zap,
-  ArrowUpRight, ArrowDownRight, Camera, Activity, Shield,
-  Wifi, Clock, Brain, Gauge, ShieldAlert
-} from 'lucide-react'
-import {
-  AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip
-} from 'recharts'
-
-
-
 function Home() {
+  const [detectionData, setDetectionData] = useState({
+    danger_zones: 0,
+    max_risk: 0,
+    frame_count: 0,
+    processed_count: 0,
+    zones: []
+  })
+  const [events, setEvents] = useState([])
+  const [alertLevel, setAlertLevel] = useState('safe') // 'safe', 'warning', 'critical'
+  const [drones, setDrones] = useState([]) // Lifted state for sharing between SimulatedView and DroneCam
+
+  // Poll detection data from Python backend
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/detection_data')
+        const data = await response.json()
+        setDetectionData(data)
+
+        // Determine alert level
+        if (data.max_risk >= 0.8) {
+          setAlertLevel('critical')
+        } else if (data.max_risk >= 0.6) {
+          setAlertLevel('warning')
+        } else {
+          setAlertLevel('safe')
+        }
+
+        // Add new event if danger zones detected
+        if (data.zones && data.zones.length > 0) {
+          const newEvents = data.zones.map(zone => ({
+            id: `${zone.id}-${data.frame_count}`,
+            level: zone.risk_score >= 0.8 ? 'critical' : 'warning',
+            message: `Risk detected - ${(zone.risk_score * 100).toFixed(0)}%`,
+            zone: `Zone #${zone.id}`,
+            time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+            metrics: zone.metrics
+          }))
+          setEvents(prev => [...newEvents, ...prev].slice(0, 20))
+        }
+      } catch (err) {
+        console.error('Failed to fetch detection data:', err)
+      }
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 500) // Poll every 500ms
+    return () => clearInterval(interval)
+  }, [])
+
   return (
     <div className="dashboard">
-      <DashboardHeader />
-
-      <div className="section-padding">
-        <SystemStats />
-        <MetricsCharts />
-
-        <div className="grid-2-1">
-          <SimulatedView />
-          <EventLog />
+      {/* Header */}
+      <header style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottom: '2px solid #1e293b',
+        padding: '16px 32px',
+        backgroundColor: '#0f172a',
+        background: 'linear-gradient(to right, #0f172a, #1e293b)',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ position: 'relative' }}>
+            <ShieldAlert size={28} color='#10b981' />
+            <span style={{
+              position: 'absolute',
+              top: -2,
+              right: -2,
+              height: 10,
+              width: 10,
+              borderRadius: '50%',
+              backgroundColor: alertLevel === 'critical' ? '#ef4444' : '#10b981',
+              display: 'block',
+              animation: alertLevel === 'critical' ? 'pulse 1s infinite' : 'none',
+              boxShadow: `0 0 10px ${alertLevel === 'critical' ? '#ef4444' : '#10b981'}`
+            }} />
+          </div>
+          <span style={{ fontSize: 24, fontWeight: 700, color: '#e2e8f0', fontFamily: 'system-ui, -apple-system, sans-serif', letterSpacing: '1px' }}>
+            ClearPath
+          </span>
         </div>
 
-        <VenueZones />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.15)', borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+            <Activity size={16} color='#10b981' />
+            <span style={{ fontSize: 12, fontFamily: 'system-ui, sans-serif', color: '#10b981', fontWeight: 600 }}>
+              AI ACTIVE
+            </span>
+          </div>
+          <span style={{ fontSize: 14, fontFamily: 'monospace', color: '#94a3b8', fontWeight: 500 }}>
+            {new Date().toLocaleTimeString('en-US', { hour12: false })}
+          </span>
+        </div>
+      </header>
+
+      <div className="section-padding">
+        {/* Critical Alert Banner */}
+        {alertLevel === 'critical' && (
+          <div style={{
+            backgroundColor: 'rgba(239,68,68,0.15)',
+            border: '2px solid #ef4444',
+            borderRadius: 12,
+            padding: '20px 28px',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 20,
+            animation: 'pulse 2s infinite',
+            boxShadow: '0 4px 20px rgba(239,68,68,0.3)'
+          }}>
+            <AlertTriangle size={36} color='#ef4444' />
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#ef4444', marginBottom: 6, fontFamily: 'system-ui, sans-serif', letterSpacing: '0.5px' }}>
+                ⚠️ CRITICAL ALERT — CROWD CRUSH RISK DETECTED
+              </div>
+              <div style={{ fontSize: 15, color: '#fca5a5', fontFamily: 'system-ui, sans-serif' }}>
+                Drone dispatched to Zone #{detectionData.zones[0]?.id} • Risk Level: {(detectionData.max_risk * 100).toFixed(0)}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* System Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+          <StatCard
+            icon={Users}
+            label="Frames Processed"
+            value={detectionData.processed_count || 0}
+            subtext="total frames analyzed"
+          />
+          <StatCard
+            icon={AlertTriangle}
+            label="Active Danger Zones"
+            value={detectionData.danger_zones || 0}
+            subtext="zones requiring attention"
+            alert={detectionData.danger_zones > 0}
+          />
+          <StatCard
+            icon={Gauge}
+            label="Max Risk Level"
+            value={`${(detectionData.max_risk * 100).toFixed(0)}%`}
+            subtext="highest detected risk"
+            alert={detectionData.max_risk >= 0.6}
+          />
+          <StatCard
+            icon={Activity}
+            label="Detection Count"
+            value={detectionData.detection_count || 0}
+            subtext="danger events detected"
+          />
+        </div>
+        {/* Metrics Row */}
+        <div style={{ marginBottom: 20 }}>
+          {detectionData.zones && detectionData.zones.length > 0 && detectionData.zones[0] ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 16
+            }}>
+              <MetricCard
+                label="Bidirectional Flow"
+                value={(detectionData.zones[0].metrics.bidirectional * 100).toFixed(0)}
+                max={100}
+                color="#f59e0b"
+              />
+              <MetricCard
+                label="Crowd Density"
+                value={(detectionData.zones[0].metrics.density * 100).toFixed(0)}
+                max={100}
+                color="#ef4444"
+              />
+              <MetricCard
+                label="Flow Conflict"
+                value={(detectionData.zones[0].metrics.flow_conflict * 100).toFixed(0)}
+                max={100}
+                color="#fb923c"
+              />
+              <MetricCard
+                label="Stop-Go Waves"
+                value={(detectionData.zones[0].metrics.stop_go * 100).toFixed(0)}
+                max={100}
+                color="#a78bfa"
+              />
+            </div>
+          ) : (
+            <div></div>
+          )}
+        </div>
+
+        {/* Main Content: Full Width Live Feed on Top */}
+        <div style={{ marginBottom: 20 }}>
+          <InteractiveVideoFeed detectionData={detectionData} />
+        </div>
+
+        {/* Bottom Row: Tactical Map + Drone Cam */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+          {/* Tactical Map */}
+          <SimulatedView drones={drones} setDrones={setDrones} />
+
+          {/* Drone Cam */}
+          <DroneCam detectionData={detectionData} drones={drones} />
+        </div>
+
+        {/* Metrics Row */}
+        {/* <div style={{ marginBottom: 20 }}>
+          {detectionData.zones && detectionData.zones.length > 0 && detectionData.zones[0] ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 16
+            }}>
+              <MetricCard
+                label="Bidirectional Flow"
+                value={(detectionData.zones[0].metrics.bidirectional * 100).toFixed(0)}
+                max={100}
+                color="#f59e0b"
+              />
+              <MetricCard
+                label="Crowd Density"
+                value={(detectionData.zones[0].metrics.density * 100).toFixed(0)}
+                max={100}
+                color="#ef4444"
+              />
+              <MetricCard
+                label="Flow Conflict"
+                value={(detectionData.zones[0].metrics.flow_conflict * 100).toFixed(0)}
+                max={100}
+                color="#fb923c"
+              />
+              <MetricCard
+                label="Stop-Go Waves"
+                value={(detectionData.zones[0].metrics.stop_go * 100).toFixed(0)}
+                max={100}
+                color="#a78bfa"
+              />
+            </div>
+          ) : (
+            <div></div>
+          )}
+        </div> */}
+      </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function StatCard({ icon: Icon, label, value, subtext, alert }) {
+  return (
+    <div style={{
+      backgroundColor: '#0f172a',
+      border: `2px solid ${alert ? '#ef4444' : '#1e293b'}`,
+      borderRadius: 12,
+      padding: '16px 20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 16,
+      boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+      transition: 'transform 0.2s, box-shadow 0.2s'
+    }}>
+      <div style={{
+        height: 42,
+        width: 42,
+        borderRadius: 8,
+        backgroundColor: alert ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+        border: `1px solid ${alert ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <Icon size={20} color={alert ? '#ef4444' : '#10b981'} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4, fontFamily: 'system-ui, sans-serif', fontWeight: 500 }}>
+          {label}
+        </div>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 700,
+          color: alert ? '#ef4444' : '#e2e8f0',
+          fontFamily: 'system-ui, sans-serif'
+        }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'system-ui, sans-serif' }}>
+          {subtext}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EventItem({ event }) {
+  const iconColor = event.level === 'critical' ? '#ef4444' : '#f59e0b'
+  const bgStyle = event.level === 'critical'
+    ? { backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }
+    : { backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)' }
+
+  return (
+    <div style={{
+      ...bgStyle,
+      borderRadius: 8,
+      padding: '10px 14px',
+      marginBottom: 10,
+      fontSize: 12,
+      fontFamily: 'system-ui, sans-serif'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'start', gap: 8 }}>
+        <AlertTriangle size={14} color={iconColor} style={{ marginTop: 2 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#f0f0f0', marginBottom: 2 }}>
+            {event.message}
+          </div>
+          <div style={{ color: '#888', fontSize: 11 }}>
+            {event.zone} • {event.time}
+          </div>
+          {event.metrics && (
+            <div style={{ marginTop: 4, fontSize: 10, color: '#666' }}>
+              Density: {(event.metrics.density * 100).toFixed(0)}% | Flow: {(event.metrics.bidirectional * 100).toFixed(0)}%
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({ label, value, max, color }) {
+  const percentage = Math.min((value / max) * 100, 100)
+
+  return (
+    <div style={{
+      backgroundColor: '#0f172a',
+      border: '2px solid #1e293b',
+      borderRadius: 12,
+      padding: 20,
+      boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        marginBottom: 10
+      }}>
+        <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'system-ui, sans-serif', fontWeight: 500 }}>{label}</span>
+        <span style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color: '#e2e8f0',
+          fontFamily: 'system-ui, sans-serif'
+        }}>
+          {value}%
+        </span>
+      </div>
+      <div style={{
+        width: '100%',
+        height: 8,
+        backgroundColor: '#1e293b',
+        borderRadius: 4,
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          width: `${percentage}%`,
+          height: '100%',
+          backgroundColor: color,
+          transition: 'width 0.3s ease',
+          borderRadius: 4
+        }} />
       </div>
     </div>
   )

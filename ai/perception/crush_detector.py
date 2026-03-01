@@ -10,6 +10,7 @@
 
 import cv2
 import numpy as np
+import time
 from collections import deque
 from ultralytics import YOLO
 
@@ -45,8 +46,18 @@ class CrushRiskDetector:
         # YOLOv8 nano model for person detection (fast + accurate)
         if self.use_yolo:
             try:
+                import torch
+                # Detect if CUDA is available
+                cuda_available = torch.cuda.is_available()
+                device = 'cuda:0' if cuda_available else 'cpu'
+                
                 self.yolo_model = YOLO('yolov8n.pt')  # Nano model for speed
-                print("✅ YOLOv8 loaded for person detection")
+                
+                if cuda_available:
+                    device_name = torch.cuda.get_device_name(0)
+                    print(f"✅ YOLOv8 loaded with CUDA acceleration ({device_name})")
+                else:
+                    print("✅ YOLOv8 loaded (CPU mode - install PyTorch with CUDA for 5-10x speedup)")
             except Exception as e:
                 print(f"⚠️  YOLOv8 loading failed: {e}, falling back to background subtraction")
                 self.use_yolo = False
@@ -66,18 +77,30 @@ class CrushRiskDetector:
         self.cell_history = {}  # (row, col) -> deque of speed values
         self.risk_smoothing = {}  # (row, col) -> smoothed risk score
         self.smoothing_alpha = 0.3  # EMA smoothing factor
+        
+        # YOLO detection caching for performance
+        self.cached_person_detections = []  # Cache last YOLO detection
+        self.yolo_frame_counter = 0  # Track when to run YOLO
+        
+        # 🚁 DANGER ZONE PERSISTENCE (for drone coordination)
+        # Keep zones active long enough for hardware to respond
+        self.active_zones = {}  # zone_id -> {first_seen, last_seen, last_update, zone_data, confirmed}
+        self.min_zone_duration = 10.0  # Minimum seconds to keep zone active (drone flight time)
+        self.zone_confirmation_frames = 3  # Require N consecutive frames before confirming
+        self.zone_merge_distance = 100  # Pixels - zones closer than this are same location
+        self.next_zone_id = 0  # Unique zone ID counter
          
-    def detect_crush_risk(self, frame):
+    def detect_crush_risk(self, frame, yolo_interval=2):
         """
         Scan frame for crowd crush risk areas.
         
         Args:
             frame: RGB/BGR video frame
+            yolo_interval: Run YOLO every Nth call (default: 2 = every other frame)
             
         Returns:
             Dictionary with:
-                - danger_zone: {center: (x, y), radius: int, risk_score: float}
-                - safe_zone: {center: (x, y), radius: int}
+                - danger_zones: List of danger zone dicts
                 - all_risks: List of all risky cells with scores
         """
         if frame is None or frame.size == 0:
@@ -109,30 +132,45 @@ class CrushRiskDetector:
         fg_mask = self.bg_subtractor.apply(frame)
         
         # YOLOv8 person detection for accurate density
+        # Use cached detections if within interval (2-3x speed boost)
         person_detections = []
         if self.use_yolo and self.yolo_model is not None:
-            try:
-                # Run YOLO detection (class 0 = person)
-                results = self.yolo_model(frame, verbose=False, classes=[0])
-                
-                # Extract person bounding boxes
-                if len(results) > 0 and results[0].boxes is not None:
-                    boxes = results[0].boxes
-                    for box in boxes:
-                        # Get box coordinates
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        conf = box.conf[0].cpu().numpy()
+            self.yolo_frame_counter += 1
+            
+            
+            # Only run YOLO every Nth frame
+            if self.yolo_frame_counter >= yolo_interval:
+                self.yolo_frame_counter = 0
+                try:
+                    # Run YOLO detection (class 0 = person)
+                    # CUDA acceleration happens automatically if available
+                    results = self.yolo_model(frame, verbose=False, classes=[0])
+                    
+                    # Extract person bounding boxes
+                    if len(results) > 0 and results[0].boxes is not None:
+                        boxes = results[0].boxes
+                        person_detections = []
+                        for box in boxes:
+                            # Get box coordinates
+                            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                            conf = box.conf[0].cpu().numpy()
+                            
+                            # Only use high-confidence detections
+                            if conf > 0.3:
+                                person_detections.append({
+                                    'bbox': (int(x1), int(y1), int(x2), int(y2)),
+                                    'center': (int((x1 + x2) / 2), int((y1 + y2) / 2)),
+                                    'confidence': float(conf)
+                                })
                         
-                        # Only use high-confidence detections
-                        if conf > 0.3:
-                            person_detections.append({
-                                'bbox': (int(x1), int(y1), int(x2), int(y2)),
-                                'center': (int((x1 + x2) / 2), int((y1 + y2) / 2)),
-                                'confidence': float(conf)
-                            })
-            except Exception as e:
-                # Fallback to background subtraction if YOLO fails
-                pass
+                        # Cache the detections
+                        self.cached_person_detections = person_detections
+                except Exception as e:
+                    # Fallback to background subtraction if YOLO fails
+                    pass
+            else:
+                # Use cached detections (people don't teleport between frames)
+                person_detections = self.cached_person_detections
         
         # Scan frame with sliding grid
         risk_cells = []
@@ -152,6 +190,7 @@ class CrushRiskDetector:
                 fg_cell = fg_mask[y1:y2, x1:x2]
                 
                 # Calculate density using YOLO or fallback to background subtraction
+                people_in_cell = 0
                 if person_detections:
                     # Count people whose center is in this grid cell
                     people_in_cell = sum(
@@ -193,18 +232,18 @@ class CrushRiskDetector:
                 
                 # Gate 1: If density too low, it's safe (even if bidirectional)
                 # At low density, people have space to move around each other
-                if density < 0.5:
+                if density < 0.4:
                     base_risk = 0.0  # Safe - people have space to navigate
                 # Gate 2: If no bidirectional flow, it's safe (even if dense)
                 # Dense unidirectional crowds are normal at events
-                elif bidirectional_score < 0.5:
+                elif bidirectional_score < 0.4:
                     base_risk = 0.0  # Safe - dense crowd moving together
                 else:
                     # BOTH conditions met: high density + opposing flows = DANGER
                     # Weighted risk from motion patterns
                     base_risk = (
-                        0.60 * bidirectional_score +    # PRIMARY: Opposing flows
-                        0.30 * flow_conflict +          # Secondary: Chaotic directions  
+                        0.65 * bidirectional_score +    # PRIMARY: Opposing flows
+                        0.25 * flow_conflict +          # Secondary: Chaotic directions  
                         0.10 * stop_go_score            # Tertiary: Pressure waves
                     )
                 
@@ -224,8 +263,8 @@ class CrushRiskDetector:
                 self.risk_smoothing[cell_key] = risk_score
                 
                 # Only consider cells with meaningful risk (higher threshold)
-                # 0.65 = requires BOTH high density AND high bidirectional flow
-                if risk_score > 0.8:  # Raised to prevent crosswalk false positives
+                # 0.5 = requires BOTH moderate density AND bidirectional flow
+                if risk_score > 0.55:  # Lowered to detect opposing flows more reliably
                     risk_cells.append({
                         'row': row,
                         'col': col,
@@ -235,10 +274,12 @@ class CrushRiskDetector:
                         'bidirectional': bidirectional_score,
                         'flow_conflict': flow_conflict,
                         'stop_go': stop_go_score,
+                        'person_count': people_in_cell,
                     })
         
         # Build all danger zones (can be multiple)
-        danger_zones = []
+        current_time = time.time()
+        newly_detected_zones = []
         
         if risk_cells:
             # Sort by risk score
@@ -252,33 +293,118 @@ class CrushRiskDetector:
                 base_radius = self.grid_size
                 danger_radius = int(base_radius * (0.6 + 0.3 * cell['density']))
                 
+                # Green circle should be just around where arrows end
+                # Arrow length = danger_radius * 0.4, starting at danger_radius * 1.05
+                arrow_length = danger_radius * 0.4
+                safe_radius = int(danger_radius * 1.05 + arrow_length + 10)  # +10px padding
+                
                 danger_zone = {
                     'center': cell['center'],
                     'radius': danger_radius,
                     'risk_score': cell['risk_score'],
+                    'person_count': cell.get('person_count', 0),
                     'metrics': {
                         'density': cell['density'],
                         'bidirectional': cell['bidirectional'],
                         'flow_conflict': cell['flow_conflict'],
                         'stop_go': cell['stop_go'],
+                    },
+                    # ALWAYS include safe zone for consistent visualization
+                    'safe_zone': {
+                        'center': cell['center'],
+                        'radius': safe_radius
                     }
                 }
                 
-                # Safe zone (green circle) - slightly larger
-                safe_radius = int(danger_radius * 1.8)
-                danger_zone['safe_zone'] = {
-                    'center': cell['center'],
-                    'radius': safe_radius
-                }
+                newly_detected_zones.append(danger_zone)
+        
+        # Match newly detected zones to existing active zones
+        matched_zone_ids = set()
+        
+        for new_zone in newly_detected_zones:
+            # Find if this matches an existing active zone (same location)
+            matched_id = None
+            for zone_id, zone_info in self.active_zones.items():
+                if self._zones_match(new_zone['center'], zone_info['zone_data']['center']):
+                    matched_id = zone_id
+                    break
+            
+            if matched_id is not None:
+                # Update existing zone - preserve original radius and center to keep visualization perfectly stable
+                existing_zone = self.active_zones[matched_id]['zone_data']
                 
-                danger_zones.append(danger_zone)
+                # Update timestamps and metrics but KEEP original center/radius/safe_zone locked 
+                # so the drone deployment target remains stable
+                existing_zone['risk_score'] = new_zone['risk_score']
+                existing_zone['metrics'] = new_zone['metrics']
+                existing_zone['person_count'] = new_zone.get('person_count', 0)
+                # existing_zone['center'] = new_zone['center']  # DO NOT update position, keep it locked
+                # radius and safe_zone stay the same (locked at first detection)
+                
+                self.active_zones[matched_id]['last_seen'] = current_time
+                self.active_zones[matched_id]['last_update'] = current_time
+                self.active_zones[matched_id]['detection_count'] = self.active_zones[matched_id].get('detection_count', 0) + 1
+                
+                # Confirm zone after N consecutive detections
+                if self.active_zones[matched_id]['detection_count'] >= self.zone_confirmation_frames:
+                    self.active_zones[matched_id]['confirmed'] = True
+                
+                matched_zone_ids.add(matched_id)
+            else:
+                # Create new zone
+                zone_id = self.next_zone_id
+                self.next_zone_id += 1
+                
+                self.active_zones[zone_id] = {
+                    'zone_id': zone_id,
+                    'first_seen': current_time,
+                    'last_seen': current_time,
+                    'last_update': current_time,
+                    'zone_data': new_zone,
+                    'confirmed': False,  # Not confirmed until seen N frames
+                    'detection_count': 1
+                }
+                matched_zone_ids.add(zone_id)
+        
+        # Clean up expired zones
+        # Only remove zones that:
+        # 1. Haven't been seen recently (5 seconds)
+        # 2. AND have existed for minimum duration (10 seconds)
+        zones_to_remove = []
+        for zone_id, zone_info in self.active_zones.items():
+            time_since_last_seen = current_time - zone_info['last_seen']
+            time_since_first_seen = current_time - zone_info['first_seen']
+            
+            # Remove if: not seen for 5 seconds AND (not confirmed OR existed long enough)
+            if time_since_last_seen > 5.0:
+                if not zone_info['confirmed'] or time_since_first_seen > self.min_zone_duration:
+                    zones_to_remove.append(zone_id)
+        
+        for zone_id in zones_to_remove:
+            del self.active_zones[zone_id]
+        
+        # Build final danger zones list from all active confirmed zones
+        danger_zones = []
+        for zone_id, zone_info in self.active_zones.items():
+            if zone_info['confirmed']:  # Only show confirmed zones
+                import copy
+                zone_data = copy.deepcopy(zone_info['zone_data'])
+                
+                # Add persistence metadata for drone coordination
+                zone_data['zone_id'] = zone_id
+                zone_data['active_duration'] = current_time - zone_info['first_seen']
+                zone_data['last_detected'] = current_time - zone_info['last_seen']
+                
+                danger_zones.append(zone_data)
         
         # Update previous frame
         self.prev_frame = gray.copy()
         
         return {
-            'danger_zones': danger_zones,  # List of all danger zones
-            'all_risks': risk_cells
+            'danger_zones': danger_zones,  # List of all persistent danger zones
+            'all_risks': risk_cells,
+            'active_zones_count': len(self.active_zones),
+            'confirmed_zones_count': len(danger_zones)
         }
     
     def _calculate_density(self, fg_mask):
@@ -373,8 +499,8 @@ class CrushRiskDetector:
         valid_fy = fy[valid_mask]
         
         # Check horizontal opposition (left vs right)
-        left_flow = np.sum(valid_fx < -0.5)   # Moving left
-        right_flow = np.sum(valid_fx > 0.5)   # Moving right
+        left_flow = np.sum(valid_fx < -0.3)   # Moving left (lowered from -0.5)
+        right_flow = np.sum(valid_fx > 0.3)   # Moving right (lowered from 0.5)
         
         total_horizontal = left_flow + right_flow
         if total_horizontal > 0:
@@ -384,8 +510,8 @@ class CrushRiskDetector:
             horizontal_opposition = 0.0
         
         # Check vertical opposition (up vs down)
-        up_flow = np.sum(valid_fy < -0.5)     # Moving up
-        down_flow = np.sum(valid_fy > 0.5)    # Moving down
+        up_flow = np.sum(valid_fy < -0.3)     # Moving up (lowered from -0.5)
+        down_flow = np.sum(valid_fy > 0.3)    # Moving down (lowered from 0.5)
         
         total_vertical = up_flow + down_flow
         if total_vertical > 0:
@@ -398,6 +524,22 @@ class CrushRiskDetector:
         bidirectional_score = max(horizontal_opposition, vertical_opposition)
         
         return min(bidirectional_score, 1.0)
+    
+    def _zones_match(self, center1, center2):
+        """
+        Check if two zone centers are close enough to be considered same zone.
+        
+        Args:
+            center1: (x, y) tuple
+            center2: (x, y) tuple
+            
+        Returns:
+            True if zones should be merged (same physical location)
+        """
+        dx = center1[0] - center2[0]
+        dy = center1[1] - center2[1]
+        distance = np.sqrt(dx*dx + dy*dy)
+        return distance < self.zone_merge_distance
     
     def _calculate_stop_go(self, cell_key):
         """Calculate stop-go oscillation score from speed history."""
@@ -436,6 +578,8 @@ class CrushRiskDetector:
         self.prev_frame = None
         self.cell_history.clear()
         self.risk_smoothing.clear()
+        self.cached_person_detections = []
+        self.yolo_frame_counter = 0
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=500,
             varThreshold=16,
@@ -468,27 +612,54 @@ def draw_crush_risk_circles(frame, detection_result):
         risk_score = danger_zone['risk_score']
         safe_zone = danger_zone.get('safe_zone')
         
+        # Ensure center is a tuple of ints (not numpy types)
+        # Handle both regular values and numpy arrays
+        def to_python_int(val):
+            """Safely convert to Python int, handling numpy types and floats"""
+            # First, extract the value if it's a numpy type
+            if hasattr(val, 'item'):  # numpy scalar
+                val = val.item()
+            # Now convert to Python int via float (handles remaining edge cases)
+            return int(float(val))
+        
+        center = (to_python_int(center[0]), to_python_int(center[1]))
+        danger_radius = to_python_int(danger_radius)
+        
         # Draw safe zone (GREEN outer circle)
         if safe_zone:
-            safe_center = safe_zone['center']
-            safe_radius = safe_zone['radius']
+            safe_center = safe_zone.get('center')
+            safe_radius = safe_zone.get('radius')
             
-            # Green circle (where people should move TO)
-            cv2.circle(output, safe_center, safe_radius, (0, 255, 0), 3, lineType=cv2.LINE_AA)
-            
-            # Add arrow indicators pointing outward
-            num_arrows = 8
-            for i in range(num_arrows):
-                angle = (2 * np.pi * i) / num_arrows
-                # Start at danger edge
-                start_x = int(center[0] + danger_radius * 1.1 * np.cos(angle))
-                start_y = int(center[1] + danger_radius * 1.1 * np.sin(angle))
-                # End at safe edge
-                end_x = int(center[0] + safe_radius * 0.9 * np.cos(angle))
-                end_y = int(center[1] + safe_radius * 0.9 * np.sin(angle))
-                
-                cv2.arrowedLine(output, (start_x, start_y), (end_x, end_y), 
-                              (0, 255, 0), 2, tipLength=0.3, line_type=cv2.LINE_AA)
+            # Ensure safe zone coords are tuples of ints
+            if safe_center is not None and safe_radius is not None:
+                try:
+                    # Force conversion to native Python types
+                    x_coord = to_python_int(safe_center[0])
+                    y_coord = to_python_int(safe_center[1])
+                    
+                    safe_center = (x_coord, y_coord)
+                    safe_radius = to_python_int(safe_radius)
+                    
+                    # Green circle (where people should move TO)
+                    cv2.circle(output, safe_center, safe_radius, (0, 255, 0), 3, lineType=cv2.LINE_AA)
+                    
+                    # Add arrow indicators pointing outward (SHORT arrows, not extending all the way)
+                    num_arrows = 8
+                    arrow_length = danger_radius * 0.4  # Short arrows (40% of danger radius)
+                    for i in range(num_arrows):
+                        angle = (2 * np.pi * i) / num_arrows
+                        # Start at danger edge
+                        start_x = int(center[0] + danger_radius * 1.05 * np.cos(angle))
+                        start_y = int(center[1] + danger_radius * 1.05 * np.sin(angle))
+                        # End just outside danger zone (short arrow)
+                        end_x = int(start_x + arrow_length * np.cos(angle))
+                        end_y = int(start_y + arrow_length * np.sin(angle))
+                        
+                        cv2.arrowedLine(output, (start_x, start_y), (end_x, end_y), 
+                                      (0, 255, 0), 2, tipLength=0.4, line_type=cv2.LINE_AA)
+                except (TypeError, ValueError, IndexError) as e:
+                    # Skip drawing if conversion fails
+                    pass
         
         # Draw danger zone (RED filled circle with pulsing effect)
         # Pulsing based on risk score
@@ -502,12 +673,16 @@ def draw_crush_risk_circles(frame, detection_result):
         # Red border
         cv2.circle(output, center, danger_radius, (0, 0, 255), 3, lineType=cv2.LINE_AA)
         
-        # Add warning text
-        text = f"CRUSH RISK: {risk_score:.0%}"
+        # Add zone ID and duration (for drone coordination)
+        zone_id = danger_zone.get('zone_id', '?')
+        active_duration = danger_zone.get('active_duration', 0)
+        
+        # Main warning text with zone ID
+        text = f"ZONE #{zone_id}: {risk_score:.0%} RISK"
         font = cv2.FONT_HERSHEY_DUPLEX
         text_size = cv2.getTextSize(text, font, 0.6, 2)[0]
         text_x = center[0] - text_size[0] // 2
-        text_y = center[1] - danger_radius - 10
+        text_y = center[1] - danger_radius - 30  # Higher up to make room
         
         # Background for text
         cv2.rectangle(output, 
@@ -517,10 +692,15 @@ def draw_crush_risk_circles(frame, detection_result):
         
         cv2.putText(output, text, (text_x, text_y), font, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
         
+        # Add active duration (for drone coordination)
+        duration_text = f"Active: {active_duration:.1f}s"
+        cv2.putText(output, duration_text, (text_x, text_y + 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 0), 1, cv2.LINE_AA)
+        
         # Add metrics below
         metrics = danger_zone.get('metrics', {})
         info_text = f"BiDir:{metrics.get('bidirectional', 0):.2f} | D:{metrics.get('density', 0):.2f}"
-        cv2.putText(output, info_text, (text_x, text_y + 20), 
+        cv2.putText(output, info_text, (text_x, text_y + 38), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
     
     return output
